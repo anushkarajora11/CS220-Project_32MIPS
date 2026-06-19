@@ -1,119 +1,31 @@
-# 32-Bit Multi-Cycle MIPS Processor & FPGA Hardware Accelerator
+# 32-Bit FSM-Based Multi-Cycle MIPS Processor
 
-[![Verilog Simulation](https://github.com/anushkarajora11/CS220-Project_32MIPS/actions/workflows/verify.yml/badge.svg)](https://github.com/anushkarajora11/CS220-Project_32MIPS/actions)
-[![Verilog](https://img.shields.io/badge/Language-Verilog%20HDL-orange.svg)](#)
-[![MIPS Assembly](https://img.shields.io/badge/Assembly-MIPS%20%28SPIM%29-blue.svg)](#)
-[![Toolchain](https://img.shields.io/badge/FPGA-Xilinx%20Vivado%20%2F%20PYNQ--Z2-red.svg)](#)
-[![Academic Project](https://img.shields.io/badge/Course-CS220%20%40%20IIT%20Kanpur-green.svg)](#)
+This repository contains the design of a custom **32-Bit Multi-Cycle MIPS Processor** implemented in Verilog HDL. The architecture moves away from traditional pipelined design to implement a streamlined **3-Cycle Finite State Machine (FSM)** datapath, simplifying hazard resolution and optimizing control logic. 
 
-This repository contains the complete implementation of a **3-Cycle 32-Bit Multi-Cycle MIPS Processor** and a **Custom FPGA Hardware Accelerator**, designed and verified for the **AMD/Xilinx PYNQ-Z2 FPGA board**. This project was developed as a course project for **CS220: Introduction to Computer Organization** under **Prof. Mainak Chaudhuri** at the **Indian Institute of Technology, Kanpur (IITK)**.
+Developed as part of the **CS220 (Computer Organization and Architecture)** course project at **IIT Kanpur** under the guidance of **Prof. Mainak Chaudhuri**.
 
 ---
 
-## 🚀 Key Features
-
-*   **3-Cycle Multi-Cycle Processor:** A customized, synthesizable multi-cycle MIPS processor that executes instructions in exactly 2 or 3 cycles (optimizing R-type, logical, memory ref, branches, and jumps).
-*   **Memory-Mapped Hardware Accelerator:** Interfaced via Memory-Mapped I/O (MMIO), providing hardware acceleration for two compute-intensive workloads:
-    *   **Mode 0 (Matrix-Vector Multiplication):** Multiplies a $3 \times 3$ matrix (16-bit signed) by a $3 \times 1$ vector in a single cycle using parallel hardware multipliers.
-    *   **Mode 1 (Graph Pathfinding):** Solves the single-source shortest path problem on a 4-node weighted graph using a parallelized hardware-implemented Dijkstra's algorithm.
-*   **Board Peripheral Integration:** Complete MMIO support mapping physical slide switches, buttons, and dual RGB LEDs of the PYNQ-Z2 board directly into the MIPS address space.
-*   **Scientific Assembly Code (SPIM):**
-    *   **Recursive Bisection Algorithm:** A MIPS assembly program implementing the bisection method to recursively find roots of $f(x) = x^3 - x - 2.0 = 0$, utilizing SPIM File I/O for initial intervals and convergence logging.
-    *   **Maclaurin Series Expansion:** Computes $e^x$ iteratively using recurrence relations with single-precision floating-point precision, reading inputs and outputting logs via SPIM File I/O.
-
----
-
-## 📐 System Architecture
-
-The system consists of the MIPS Core, a dual-port RAM interface for instructions and data, and the MMIO Decoder that routes processor read/write requests to either board peripherals or the hardware accelerator.
+## 📐 SoC Block Architecture
 
 ```mermaid
 graph TD
-    MIPS_Core[3-Cycle MIPS Core] -->|Address / Controls| MMIO_Decoder[Memory-Mapped I/O Decoder]
-    MIPS_Core -->|Instruction Address| Inst_Mem[(Instruction Memory)]
-    Inst_Mem -->|Instruction Bus| MIPS_Core
-    
-    MMIO_Decoder -->|Select Data RAM| Data_Mem[(Data Memory 16KB)]
-    MMIO_Decoder -->|Select Peripherals| Periph_Ctrl[Peripheral Controller]
-    MMIO_Decoder -->|Select Accelerator| HW_Accel[Hardware Accelerator]
+    subgraph Computer [Top-Level Wrapper: computer.v]
+        Proc[Processor Core: Processor.v]
+        Mem[RAM Memory: Memory.v]
+    end
 
-    Periph_Ctrl -->|Physical Map| Board_IO[Switches, Buttons, LEDs]
-    HW_Accel -->|Mode 0| Matrix_Mult[Parallel Matrix-Vector Engine]
-    HW_Accel -->|Mode 1| Dijkstra_Engine[Hardware Dijkstra Engine]
+    Proc -->|8-bit Address / Cmd| Mem
+    Mem -->|32-bit Data Bus| Proc
+
+    subgraph Core Components
+        RF[Register File: RegisterFile.v]
+        ALU[Arithmetic Logic Unit: ALU.v]
+    end
+
+    Proc --- RF
+    Proc --- ALU
 ```
-
-### Processor FSM State Diagram
-The FSM is structured to execute all instruction types within 3 clock cycles maximum to minimize CPI (Cycles Per Instruction):
-*   **Cycle 1: FETCH / DECODE:** Fetches the instruction, decodes registers, and increments `PC <= PC + 4`.
-*   **Cycle 2: EXECUTE:** ALU performs computations. For Jumps (`j`/`jal`) and Branches (`beq`/`bne`), `PC` is updated here, completing the instruction in 2 cycles.
-*   **Cycle 3: WRITEBACK / MEMORY:** Performs data memory read/write or writes ALU/memory results back to the Register File.
-
-```mermaid
-stateDiagram-v2
-    [*] --> FETCH_DECODE
-    FETCH_DECODE --> EXECUTE : Latch Instruction, PC <= PC + 4
-    EXECUTE --> FETCH_DECODE : Branch / Jump Taken (2 Cycles)
-    EXECUTE --> WRITEBACK_MEM : R-type, I-type, LW, SW, JAL
-    WRITEBACK_MEM --> FETCH_DECODE : RegWrite / MemAccess Complete (3 Cycles)
-```
-
----
-
-## 💾 Memory Address Map
-
-The MIPS core communicates with memory and peripherals using a unified 32-bit address space:
-
-| Address Range | Component | Description / Registers | Access |
-| :--- | :--- | :--- | :--- |
-| `0x0000_0000` - `0x0000_3FFF` | Instruction Memory (16 KB) | Processor execution code (ROM/RAM) | Read-Only |
-| `0x0000_4000` - `0x0000_7FFF` | Data Memory (16 KB) | Static data, stack, heap variables | Read/Write |
-| `0x0000_8000` | Board Slide Switches | Mapped to physical slide switches `switches[3:0]` | Read-Only |
-| `0x0000_8004` | Board Push Buttons | Mapped to physical push buttons `buttons[3:0]` | Read-Only |
-| `0x0000_8008` | Board Green LEDs | Mapped to physical green LEDs `leds[3:0]` | Write-Only |
-| `0x0000_800C` | Board RGB LEDs | Mapped to physical RGB LEDs `rgb_leds[5:0]` | Write-Only |
-| `0x0000_8100` | Accelerator CSR | Control/Status (bit 0: Busy/Start, bit 1: Done/Reset, bit 2: Mode) | Read/Write |
-| `0x0000_8110` - `0x0000_8130` | Matrix M Registers | $3 \times 3$ input matrix coefficients (16-bit signed) | Read/Write |
-| `0x0000_8134` - `0x0000_813C` | Vector V Registers | $3 \times 1$ input vector coefficients (16-bit signed) | Read/Write |
-| `0x0000_8140` - `0x0000_8148` | Output Y Registers | $3 \times 1$ output vector results (32-bit signed) | Read-Only |
-| `0x0000_8150` - `0x0000_818C` | Adjacency Matrix W | $4 \times 4$ Dijkstra edge weights (8-bit, 255 = $\infty$) | Read/Write |
-| `0x0000_8190` | Dijkstra Start Node | Root node for shortest path search (0 to 3) | Read/Write |
-| `0x0000_8194` - `0x0000_81A0` | Dijkstra Outputs | Shortest distances to nodes 0, 1, 2, 3 (8-bit) | Read-Only |
-
----
-
-## 🛠️ Hardware Accelerator Workloads
-
-### 1. Matrix-Vector Multiplication (Mode 0)
-The accelerator computes $Y = M \times V$ where $M$ is a $3\times3$ signed 16-bit matrix and $V$ is a $3\times1$ signed 16-bit vector.
-The calculation is completed in a single clock cycle using parallel multipliers:
-$$Y_i = \sum_{j=0}^{2} M_{ij} \times V_j, \quad i \in \{0, 1, 2\}$$
-
-### 2. Dijkstra Graph Pathfinding (Mode 1)
-Given a 4-node directed graph, the hardware-implemented Dijkstra engine solves the single-source shortest path problem.
-*   **Execution FSM:**
-    *   **`ST_INIT`:** Sets $D[\text{start}] = 0$ and $D[i] = 255$ ($\infty$) for other nodes; clears visited mask.
-    *   **`ST_STEP`:** Combinational logic selects the unvisited node $u$ with minimum distance. It marks $u$ as visited and relaxes all unvisited neighbors $v$ in parallel:
-        $$D[v] = \min(D[v], D[u] + W_{uv})$$
-    *   **`ST_DONE`:** Asserts the "Done" flag and transitions back to IDLE.
-*   The hardware engine converges in exactly **4 clock cycles** (one cycle per node), showcasing massive hardware parallelism compared to software loops.
-
----
-
-## 📜 Scientific Assembly Programs
-
-The assembly programs are written under standard MIPS register naming and calling conventions (using `$ra`, `$sp`, `$fp` for stack frame management) and run on the SPIM simulator.
-
-### 1. Recursive Bisection Algorithm (`bisection.s`)
-*   **Target Function:** Finds the root of $f(x) = x^3 - x - 2.0 = 0$ in the interval $[1.0, 2.0]$.
-*   **Recursion:** Follows standard call stacks. If $|b - a| < \epsilon$, it hits the base case and returns the root. Otherwise, it divides the interval in half and recurses.
-*   **File I/O:** Utilizes SPIM syscalls `13` (Open), `14` (Read), `15` (Write), and `16` (Close) to parse `input_bisect.bin` (binary float inputs $a, b, \epsilon$) and write formatted step logs to `output_bisect.txt`.
-*   **Float Formatting:** Implements a custom float-to-string conversion algorithm in assembly to print floating-point results with up to 5 decimal places.
-
-### 2. Maclaurin Series Expansion (`maclaurin.s`)
-*   **Formula:** Approximates $e^x$ using the Maclaurin series expansion:
-    $$e^x = \sum_{n=0}^{N} \frac{x^n}{n!}$$
-*   **Algorithmic Optimization:** Uses the recurrence relation $T_n = T_{n-1} \times \frac{x}{n}$ to calculate terms sequentially. This avoids floating-point exponentiation and factorials, preventing overflow and rounding errors.
-*   **File I/O:** Reads parameters $x$ (float) and $N$ (integer) from `input_exp.bin` and writes step-by-step evaluations and cumulative sums to `output_exp.txt`.
 
 ---
 
@@ -121,75 +33,82 @@ The assembly programs are written under standard MIPS register naming and callin
 
 ```text
 .
-├── README.md                      # Project Overview and Documentation
-├── board/
-│   └── pynq-z2.xdc                # Xilinx Physical Constraints File for PYNQ-Z2
-├── src/
-│   ├── processor/
-│   │   ├── alu.v                  # 32-bit ALU
-│   │   ├── regfile.v              # 32x32 Register File
-│   │   ├── control.v              # 3-cycle FSM Control Unit
-│   │   ├── mips_core.v            # Integrated Datapath and Control
-│   │   └── mips_top.v             # Top-Level Integrated SoC with Memory/MMIO
-│   ├── accelerator/
-│   │   └── accelerator.v          # Hardware Accelerator (Matrix-Mult / Dijkstra)
-│   └── assembly/
-│       ├── bisection.s            # MIPS Assembly: Recursive Bisection
-│       └── maclaurin.s            # MIPS Assembly: Maclaurin Expansion
-└── tb/
-    ├── tb_accelerator.v           # Standalone Testbench for the Accelerator
-    └── tb_mips_top.v              # System Testbench loading Hex code to processor
+├── defs.vh          # Global opcodes, function codes, and system call definitions
+├── RegisterFile.v   # 32x32-bit register file (reads asynchronously, writes on negedge)
+├── Memory.v         # 256-word byte-addressable RAM with sub-word write command support
+├── ALU.v            # Combinational Arithmetic Logic Unit and Branch Calculator
+├── Processor.v      # CPU core implementing the 3-state control FSM and big-endian loads/stores
+├── computer.v       # Top-level system wrapper connecting CPU and Memory
+└── README.md        # Project documentation
 ```
 
----
+### Module Breakdown
 
-## 🧪 Simulation and Verification
-
-### Standalone Accelerator Verification
-The testbench [tb_accelerator.v](tb/tb_accelerator.v) verifies the correctness of both accelerator modes using self-checking assertions:
-1.  **Mode 0:** Performs matrix-vector multiplication and asserts results match the expected values.
-2.  **Mode 1:** Inputs a weighted graph and verifies that the Dijkstra engine resolves the shortest paths correctly.
-
-### Integrated MIPS Core Verification
-The system-level testbench [tb_mips_top.v](tb/tb_mips_top.v) loads a precompiled machine code program into the instruction memory. The program writes operands to the accelerator, starts it, polls the status register, reads back the results, and writes the calculated value to the board's LEDs.
-
-#### To run the simulation with Icarus Verilog:
-1.  Compile the processor and testbench:
-    ```bash
-    iverilog -o mips_sim tb/tb_mips_top.v src/processor/*.v src/accelerator/*.v
-    ```
-2.  Run the simulator:
-    ```bash
-    vvp mips_sim
-    ```
-3.  **Expected Output:**
-    ```text
-    ==================================================
-    RUNNING INTEGRATED MIPS CORE + ACCELERATOR TESTBENCH
-    ==================================================
-    [PC=00000000] Instruction: 34108000 (State: FETCH/DECODE)
-    [PC=00000004] Instruction: 20080002 (State: FETCH/DECODE)
-          >>> MMIO Write: Addr = 00008110, Data = 2 (00000002)
-    [PC=00000008] Instruction: ac880110 (State: FETCH/DECODE)
-    ...
-          >>> MMIO Write: Addr = 00008100, Data = 1 (00000001)
-    ...
-    [PC=0000003c] Instruction: ac8f0008 (State: FETCH/DECODE)
-          >>> MMIO Write: Addr = 00008008, Data = 4 (00000004)
-    ==================================================
-    SIMULATION COMPLETED
-    ==================================================
-    Final Board Outputs:
-          LEDs     = 0100 (Expected: 0100)
-          RGB LEDs = 000000
-    SUCCESS: MIPS Core correctly programmed and verified the FPGA Accelerator!
-    ==================================================
-    ```
+| Module | Filename | Description |
+| :--- | :--- | :--- |
+| **SoC Wrapper** | [`computer.v`](file:///c:/Users/rajor/OneDrive/Documents/CS220-Project_32MIPS/computer.v) | Orchestrates clock cycles (`total_cycles`, `proc_cycles`), reset/initialization, and connects CPU and memory buses. |
+| **CPU Core** | [`Processor.v`](file:///c:/Users/rajor/OneDrive/Documents/CS220-Project_32MIPS/Processor.v) | Houses the 3-state FSM, performs partial-word layout formatting, and handles system-call stalls. |
+| **Execution Engine** | [`ALU.v`](file:///c:/Users/rajor/OneDrive/Documents/CS220-Project_32MIPS/ALU.v) | A pure combinational block executing mathematical operations, logical shifts, and branch/jump targets. |
+| **Registers** | [`RegisterFile.v`](file:///c:/Users/rajor/OneDrive/Documents/CS220-Project_32MIPS/RegisterFile.v) | 32 registers of 32-bit widths. Implements asynchronous reads, synchronous writes on the negative edge, and a hardwired register `$0`. |
+| **System Memory** | [`Memory.v`](file:///c:/Users/rajor/OneDrive/Documents/CS220-Project_32MIPS/Memory.v) | 1 KB RAM organized as 256 words of 32 bits. Supports byte/half-word write commands. |
+| **Constants Header** | [`defs.vh`](file:///c:/Users/rajor/OneDrive/Documents/CS220-Project_32MIPS/defs.vh) | Global macros mapping instruction fields, function codes, and hardware I/O syscall numbers. |
 
 ---
 
-## 🎓 Academic Context
-*   **Course:** CS220: Introduction to Computer Organization
-*   **Institution:** Indian Institute of Technology, Kanpur (IITK)
-*   **Instructor:** Prof. Mainak Chaudhuri
-*   **Term:** Spring Semester
+## ⚡ Finite State Machine & Execution Flow
+
+The processor operates on a 3-cycle execution cycle using a hardware FSM:
+
+```mermaid
+stateDiagram-v2
+    [*] --> STATE_0 : Reset Released
+    STATE_0 --> STATE_1 : Fetch & Decode Instruction
+    STATE_1 --> STATE_5 : syscall (SYS_read)
+    STATE_1 --> STATE_3 : syscall (SYS_write) / buffer full
+    STATE_1 --> STATE_2 : Execute (R-type, I-type, LW, SW, Jumps, Branches)
+    STATE_5 --> STATE_6 : Wait for Input Valid
+    STATE_6 --> STATE_2 : Latch input
+    STATE_3 --> STATE_4 : Wait for I/O buffer read handshake
+    STATE_4 --> STATE_2 : Clear IO Stall
+    STATE_2 --> STATE_0 : Update PC / Write-back complete
+```
+
+1. **State 0 (Fetch & Decode):** Retrieves the 32-bit instruction from memory and asynchronously fetches source registers from the register file.
+2. **State 1 (Execute):** Configures ALU operands. Arithmetic/logic, memory address offset computations, or branch condition evaluations happen in this cycle. Stalls are initiated for I/O syscalls.
+3. **State 2 (Write-Back / Commit):** Latch ALU or memory read results back to the destination register. Updates PC with either sequence (`PC + 1`) or jump/branch targets.
+
+---
+
+## 📑 MIPS Instruction Format & Opcodes
+
+Each instruction is encoded as a 32-bit word, parsed dynamically by the processor:
+
+| Format | Bit Field Configuration | Operations Covered |
+| :--- | :--- | :--- |
+| **R-Type** | `opcode[31:26]` \| `rs[25:21]` \| `rt[20:16]` \| `rd[15:11]` \| `shamt[10:6]` \| `funct[5:0]` | `add`, `sub`, `and`, `or`, `xor`, `nor`, `sll`, `srl`, `sra`, `sllv`, `srlv`, `srav`, `slt`, `sltu`, `jr`, `jalr`, `syscall` |
+| **I-Type** | `opcode[31:26]` \| `rs[25:21]` \| `rt[20:16]` \| `immediate[15:0]` | `addi`, `andi`, `ori`, `xori`, `slti`, `sltiu`, `lui`, `lw`, `sw`, `lb`, `sb`, `lh`, `sh`, `lbu`, `lhu`, `beq`, `bne`, `bltz`, `bgez`, `blez`, `bgtz` |
+| **J-Type** | `opcode[31:26]` \| `jump_target[25:0]` | `j`, `jal` |
+
+---
+
+## 📦 Big-Endian Sub-Word Memory Access
+
+The system supports byte and half-word memory accesses natively, implementing Big-Endian offset alignment:
+
+*   **Loads (`lb`, `lbu`, `lh`, `lhu`):** The data word is loaded, and the byte/half-word is shifted to the lowest significant bits. Unsigned loads apply zero-extension, and signed loads apply sign-extension before committing to the register file.
+*   **Stores (`sb`, `sh`):** A custom write sequence fetches the target word from RAM, masks out the relevant byte/half-word slice, merges the new sub-word value from register `rt`, and commits the combined word to memory.
+
+---
+
+## 🚀 Verification & Simulation
+
+To compile and simulate the complete MIPS processor SoC:
+
+1. **Compile with Icarus Verilog:**
+   ```bash
+   iverilog -o mips_sim computer.v
+   ```
+2. **Run simulation using VVP:**
+   ```bash
+   vvp mips_sim
+   ```
