@@ -1,5 +1,6 @@
 # 32-Bit Multi-Cycle MIPS Processor & FPGA Hardware Accelerator
 
+[![Verilog Simulation](https://github.com/anushkarajora11/CS220-Project_32MIPS/actions/workflows/verify.yml/badge.svg)](https://github.com/anushkarajora11/CS220-Project_32MIPS/actions)
 [![Verilog](https://img.shields.io/badge/Language-Verilog%20HDL-orange.svg)](#)
 [![MIPS Assembly](https://img.shields.io/badge/Assembly-MIPS%20%28SPIM%29-blue.svg)](#)
 [![Toolchain](https://img.shields.io/badge/FPGA-Xilinx%20Vivado%20%2F%20PYNQ--Z2-red.svg)](#)

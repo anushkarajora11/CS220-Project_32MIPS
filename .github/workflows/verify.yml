@@ -1,0 +1,30 @@
+name: Verilog Simulation Verification
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout Repository
+      uses: actions/checkout@v4
+
+    - name: Install Icarus Verilog
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y iverilog
+
+    - name: Run Standalone Accelerator Simulation
+      run: |
+        iverilog -o acc_sim tb/tb_accelerator.v src/accelerator/accelerator.v
+        vvp acc_sim
+
+    - name: Run Integrated MIPS Core + Accelerator Simulation
+      run: |
+        iverilog -o mips_sim tb/tb_mips_top.v src/processor/alu.v src/processor/regfile.v src/processor/control.v src/processor/mips_core.v src/processor/mips_top.v src/accelerator/accelerator.v
+        vvp mips_sim
